@@ -1,0 +1,17 @@
+indexes:
+- kind: Downtime
+  properties:
+  - name: site
+  - name: start_date
+    direction: desc
+
+- kind: Ping
+  properties:
+  - name: interval
+  - name: site
+  - name: date
+
+- kind: Site
+  properties:
+  - name: is_enabled
+  - name: url

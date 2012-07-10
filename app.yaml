@@ -1,0 +1,30 @@
+application: pingingapp
+version: 2012-06-25
+runtime: python27
+api_version: 1
+threadsafe: true
+
+
+libraries:
+- name: jinja2
+  version: "2.6"
+
+handlers:
+
+- url: /assets
+  static_dir: assets
+
+- url: /favicon.ico
+  static_files: assets/favicon.ico
+  upload: assets/favicon.ico
+
+- url: /cron
+  script: main.app
+  login: admin
+
+- url: /create
+  script: main.app
+  login: admin
+
+- url: /.*
+  script: main.app

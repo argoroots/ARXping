@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <title>ARXping</title>
+        <meta name="description" content="">
+        <meta name="author" content="Argo Roots">
+        <link href="/assets/bootstrap.min.css" rel="stylesheet">
+        <script src="http://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js"></script>
+        <script src="/assets/bootstrap.min.js"></script>
+        <script src="/assets/jquery.flot.min.js"></script>
+        <style type="text/css">
+            body {
+                padding-top: 60px;
+                padding-bottom: 10px;
+            }
+            #plot_tooltip {
+                position: absolute;
+                display: none;
+                border: 1px solid #a1d0f6;
+                padding: 2px 5px;
+                background-color: #c5e2f9;
+                color:#2a4f6d;
+                font-size:11px;
+                text-shadow:0 0 1px rgba(255,255,255,0.3);
+                -moz-box-shadow:2px 2px 0 rgba(0,0,0,0.1),1px 1px 0 #fff;
+                -webkit-box-shadow:2px 2px 0 rgba(0,0,0,0.1),1px 1px 0 #fff;
+                box-shadow:2px 2px 0 rgba(0,0,0,0.1),1px 1px 0 #fff;
+            }
+            #plot span {
+                display: block;
+                background: url('/assets/preloader.gif') no-repeat center center;
+                width:100%;
+                height:300px;
+            }
+        </style>
+        <link rel="shortcut icon" href="/favicon.ico">
+        <!--[if IE]><script src="/assets/excanvas.min.js"></script><![endif]-->
+        <!--[if lt IE 9]><script src="http://html5shim.googlecode.com/svn/trunk/html5.js"></script><![endif]-->
+    </head>
+    <body>
+        <div class="navbar navbar-fixed-top">
+            <div class="navbar-inner">
+                <div class="container">
+                    <a class="brand" href="/" style="font-weight:bold; letter-spacing:1px; color:rgba(0, 0, 0, .1); text-shadow: 0 1px 0 rgba(255, 255, 255, .1), 0 0 30px rgba(255, 255, 255, .125);
+            ">ARXping</a>
+
+                    <div class="btn-group pull-right">
+                        <a id="period_toggle" class="btn btn-warning dropdown-toggle" data-toggle="dropdown" href="#">
+                            <span class="caret"></span>
+                        </a>
+                        <ul class="dropdown-menu">
+                            <li><a href="" class="period" data-period="24h">Last 24 hours</a></li>
+                            <li><a href="" class="period" data-period="7d">Last 7 days</a></li>
+                            <li><a href="" class="period" data-period="all">All</a></li>
+                        </ul>
+                    </div>
+
+                    <div class="btn-group pull-right">
+                        <a id="url_toggle" class="btn btn-warning dropdown-toggle" data-toggle="dropdown" href="#">
+                            <span class="caret"></span>
+                        </a>
+                        <ul class="dropdown-menu">
+                        {% for site in sites %}
+                            <li><a href="" class="url" data-id="{{ site.key().id() }}">{{ site.url.replace('http://', '').replace('https://', '') }}</a></li>
+                        {% endfor %}
+                        </ul>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+        <div class="container">
+
+            <h3>Response time</h3>
+            <div id="plot" style="height:300px; margin:5px 0px 30px 0px;">
+                <span></span>
+            </div>
+
+            <div id="downtimediv" style="display:none;">
+                <h3>Downtime</h3>
+                <table class="table" style="margin:5px 0px 30px 0px;">
+                    <thead>
+                        <tr>
+                            <th width="20%">Start</th>
+                            <th width="20%">End</th>
+                            <th width="20%">Duration</th>
+                            <th width="40%">Message</th>
+                        </tr>
+                    </thead>
+                    <tbody id="downtime">
+                    </tbody>
+                </table>
+            </div>
+
+            <footer>
+                <p style="font-size:11px; color:gray;">Made by Argo Roots. Idea (and some code) copied from <a href="http://tutorialzine.com/2011/01/google-appengine-series/">Tutorialzine</a>.</p>
+            </footer>
+        </div>
+
+        <script>
+            $(document).ready(function(){
+
+                setFooter();
+
+                $(window).resize(function() {
+                  setFooter();
+                });
+
+                function setFooter() {
+                  position = $('footer').position();
+                  if (position.top + $('footer').height() < $(window).height()) {
+                    $('footer').css({position: 'absolute', top: $(window).height()-$('footer').height() - 10});
+                  };
+                };
+
+
+                $(window).bind('hashchange', function() {
+                    var url = window.location.hash.substring(1);
+                    loadPeriod(url.split(',')[0], url.split(',')[1])
+                });
+
+                if(window.location.hash) {
+                    var url = window.location.hash.substring(1);
+                    loadPeriod(url.split(',')[0], url.split(',')[1])
+                } else {
+                    loadPeriod({{ sites[0].key().id() }}, '24h');
+                }
+
+
+                $('#plot').bind('render',function(e,plotData,labels) {
+                    var ticksLength = 7;
+                    var plot = $.plot(
+                      $('#plot'),
+                        [{
+                            data: plotData,
+                            color: '#86c9ff',
+                        }],
+                        {
+                            series: {
+                                lines: {
+                                    show:     true,
+                                    fill:     true,
+                                    fillColor:  'rgba(237,247,255,0.4)',
+                                    lineWidth:  1
+                                },
+                                shadowSize: 0,
+                                points: { show: (labels.length == 1) }
+                            },
+                            grid: {
+                                tickColor:    '#e0e0e0',
+                                hoverable:    true,
+                                borderWidth:  1,
+                                borderColor:  '#cccccc'
+                            },
+                            xaxis:{
+                                ticks:function(range) {
+                                    ticksLength = range.max-range.min;
+                                    var dv = 1;
+                                    while(ticksLength > 12) {
+                                        ticksLength = Math.floor(ticksLength/++dv);
+                                        if(dv>30) break;
+                                    }
+                                    var ratio = (range.max-range.min)/ticksLength,
+                                    ret = [];
+                                    ticksLength++;
+
+                                    for(var i=0; i<ticksLength; i++) {
+                                        ret.push(Math.floor(i*ratio));
+                                    }
+                                    return ret;
+                                }
+                            },
+                            yaxis:{
+                                min: 0
+                            }
+                      }
+                    );
+
+                    var elem = $('div.tickLabel').slice(0, ticksLength).each(function() {
+                        var l = $(this);
+                        l.text(labels[parseInt(l.text())]);
+                    }).last().next().hide();
+
+                    var prev = null;
+                    $('#plot').bind('plothover', function (e,pos,item) {
+                        if (item) {
+                            if(item.datapoint.toString() == prev) {
+                                return;
+                            }
+                            prev = item.datapoint.toString();
+                            tooltip.show(
+                                item.pageX,
+                                item.pageY,
+                                currentData.chart.tooltip.replace('%2', item.datapoint[1]).replace('%1', currentData.chart.data[item.dataIndex].label)
+                            );
+                        } else {
+                            tooltip.hide();
+                            prev = null;
+                        }
+
+                    });
+
+                }).bind('mouseleave',function() {
+                    tooltip.hide();
+                    prev = null;
+                });
+
+                var tooltip = {
+                    show : function(x, y, str) {
+                        if(!this.tooltipObj) {
+                            this.tooltipObj = $('<div>', {
+                                id:   'plot_tooltip',
+                                html:   str,
+                                css:  {opacity: 0.75}
+                            }).appendTo('body');
+                        }
+                        this.tooltipObj.hide().html(str);
+                        var width = this.tooltipObj.outerWidth();
+                        this.tooltipObj.css({left: x-width/2, top: y+15}).fadeIn(200);
+                    },
+                    hide : function() {
+                        $('#plot_tooltip').hide();
+                    }
+                }
+
+                var currentData;
+
+                function loadPeriod(id, period) {
+                    $('.url').each(function() {
+                        $(this).attr('href', '#'+$(this).data('id')+','+period);
+                    });
+                    $('.period').each(function() {
+                        $(this).attr('href', '#'+id+','+$(this).data('period'));
+                    });
+
+                    $('#url_toggle').html($(".url[data-id='" + id + "']").html()+' <span class="caret"></span>');
+                    $('#period_toggle').html($(".period[data-period='" + period + "']").html()+' <span class="caret"></span>');
+
+
+                    $.get('/ajax/'+period+'/'+id, function(r) {
+                        render(r);
+                    }, 'json');
+
+                    function render(obj) {
+                        var plotData = [],
+                            labels = [],
+                            downtimeData = $('#downtime');
+
+                        $.each(obj.chart.data,function(i) {
+                            plotData.push([i,this.value]);
+                            labels.push(this.label);
+                        });
+
+                        $('#plot').trigger('render',[plotData, labels]);
+
+                        if(obj.downtime.length) {
+                            $('#downtimediv').show();
+
+                            var tmp = '';
+                            $.each(obj.downtime, function() {
+                                tmp += '<tr>'+
+                                    '<td>'+this.begin+'</td>'+
+                                    '<td>'+this.end+'</td>'+
+                                    '<td>'+this.period+'</td>'+
+                                    '<td>'+this.message+'</td>'+
+                                    '</tr>';
+                            });
+
+                            downtimeData.html(tmp);
+                        } else {
+                            $('#downtimediv').hide();
+                            downtimeData.html('');
+                        }
+
+                        currentData = obj;
+                    }
+                    setFooter();
+                }
+
+            });
+        </script>
+    </body>
+</html>
